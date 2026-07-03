@@ -10,15 +10,28 @@ export class ApiError extends Error {
 }
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+  // headers must merge AFTER the init spread: init carries `headers: undefined`
+  // when the caller passes none, which would otherwise erase the Content-Type
+  // and make fetch send JSON bodies as text/plain.
   const response = await fetch(path, {
-    headers: { 'Content-Type': 'application/json', ...(init.headers ?? {}) },
     ...init,
+    headers: { 'Content-Type': 'application/json', ...(init.headers ?? {}) },
   })
   if (!response.ok) {
     let detail = `Request failed (${response.status})`
     try {
       const body = await response.json()
-      if (typeof body.detail === 'string') detail = body.detail
+      if (typeof body.detail === 'string') {
+        detail = body.detail
+      } else if (Array.isArray(body.detail)) {
+        // FastAPI validation errors: [{loc: ["body", "email"], msg: "..."}]
+        detail = body.detail
+          .map((e: { loc?: unknown[]; msg?: string }) => {
+            const field = e.loc?.filter((p) => p !== 'body').join('.')
+            return field ? `${field}: ${e.msg}` : (e.msg ?? '')
+          })
+          .join('; ')
+      }
     } catch {
       /* non-JSON error body — keep the generic message */
     }

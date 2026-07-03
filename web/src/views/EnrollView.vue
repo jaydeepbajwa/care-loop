@@ -9,13 +9,19 @@ const error = ref('')
 const saving = ref(false)
 const savedAt = ref<Date | null>(null)
 
-// Local working copies of form fields (autosaved on step changes)
-const answers = ref<EligibilityAnswers>({
+// Local working copies of form fields (autosaved on step changes).
+// Insurance starts empty so a real choice is required — a pre-selected
+// default reads as "answered" to the button gate but not to the user.
+const answers = ref<{
+  cancer_diagnosis: boolean
+  age_18_or_over: boolean
+  insurance: EligibilityAnswers['insurance'] | ''
+}>({
   cancer_diagnosis: false,
   age_18_or_over: false,
-  insurance: 'medicare_advantage',
+  insurance: '',
 })
-const answered = ref({ diagnosis: false, age: false, insurance: false })
+const answered = ref({ diagnosis: false, age: false })
 const contact = ref({
   first_name: '',
   last_name: '',
@@ -46,7 +52,7 @@ function hydrate() {
   if (!s) return
   if (s.eligibility_answers) {
     answers.value = s.eligibility_answers
-    answered.value = { diagnosis: true, age: true, insurance: true }
+    answered.value = { diagnosis: true, age: true }
   }
   contact.value = {
     first_name: s.first_name ?? '',
@@ -86,7 +92,7 @@ async function autosave(fields: object) {
 }
 
 const eligibilityComplete = computed(
-  () => answered.value.diagnosis && answered.value.age && answered.value.insurance,
+  () => answered.value.diagnosis && answered.value.age && answers.value.insurance !== '',
 )
 
 async function submitEligibility() {
@@ -114,12 +120,15 @@ async function giveConsent() {
   }
 }
 
+// Mirrors the server's validation closely enough that the button being
+// enabled means the submit will succeed (server-side EmailStr needs a
+// dotted domain, not just an @).
 const contactComplete = computed(
   () =>
     contact.value.first_name.trim() &&
     contact.value.last_name.trim() &&
     contact.value.phone.trim().length >= 7 &&
-    contact.value.email.includes('@'),
+    /.+@.+\..+/.test(contact.value.email),
 )
 
 async function complete() {
@@ -198,7 +207,8 @@ function startOver() {
 
       <div class="field">
         <label for="q-ins">What kind of health insurance do you have?</label>
-        <select id="q-ins" v-model="answers.insurance" @change="answered.insurance = true">
+        <select id="q-ins" v-model="answers.insurance">
+          <option value="" disabled>Choose one…</option>
           <option value="medicare_advantage">Medicare Advantage</option>
           <option value="medicaid">Medicaid</option>
           <option value="commercial">Through work / private</option>
